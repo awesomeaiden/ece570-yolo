@@ -115,7 +115,7 @@ def create_modules(blocks):
             stride = int(x["stride"])
 
             if padding:
-                pad = (kernel_size - 1)
+                pad = (kernel_size - 1) // 2
             else:
                 pad = 0
 
@@ -169,7 +169,7 @@ def create_modules(blocks):
             if end < 0:
                 filters = output_filters[index + start] + output_filters[index + end]
             else:
-                filter = output_filters[index + start]
+                filters = output_filters[index + start]
 
         # Otherwise if it is a shortcut layer
         elif x["type"] == "shortcut":
@@ -242,7 +242,7 @@ class Network(nn.Module):
                 num_classes = int(module["classes"])
 
                 # Transform
-                x = x.data
+                x = x.data.cuda()
                 x = predict_transform(x, inp_dim, anchors, num_classes)
 
                 # If no collector has been initialized
