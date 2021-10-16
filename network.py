@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+from util import *
 import torchvision.datasets
 
 
@@ -44,9 +45,36 @@ def parse_cfg(cfg_file):
         return blocks
 
 
+def get_test_input():
+    img = cv2.imread("dog-cycle-car.png")
+
+    # Resize to input dimension
+    img = cv2.resize(img, (416, 416))
+
+    # BGR -> RGB | H x W x C -> C x H x W
+    rgb_img = img[:, :, ::-1].transpose((2, 0, 1))
+
+    # Add a channel at 0 (for batch) | Normalize
+    rgb_img = rgb_img[np.newaxis, :, :, :] / 255.0
+
+    # Convert to float
+    rgb_img = torch.from_numpy(rgb_img).float()
+
+    # Convert to variable
+    rgb_img = Variable(rgb_img)
+
+    return rgb_img
+
+
 class EmptyLayer(nn.Module):
     def __init__(self):
         super(EmptyLayer, self).__init__()
+
+
+class DetectionLayer(nn.Module):
+    def __init__(self, anchors):
+        super(DetectionLayer, self).__init__()
+        self.anchors = anchors
 
 
 # Takes a list of blocks and generates nn modules for each
@@ -133,9 +161,11 @@ def create_modules(blocks):
             if end > 0:
                 end = end - index
 
+            # Use empty layer here, as we will perform routing directly in forward function of the overall network
             route = EmptyLayer()
             module.add_module("route_" + str(index), route)
 
+            # Update filters to hold the number of filters outputted by the route layer
             if end < 0:
                 filters = output_filters[index + start] + output_filters[index + end]
             else:
@@ -146,6 +176,86 @@ def create_modules(blocks):
             shortcut = EmptyLayer()
             module.add_module("shortcut_" + str(index), shortcut)
 
+        # Otherwise if it is a detection layer
+        elif x["type"] == "yolo":
+            mask = [int(x) for x in x["mask"].split(",")]
+
+            anchors = [int(a) for a in x["anchors"].split(",")]
+            anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+            anchors = [anchors[i] for i in mask]
+
+            detection = DetectionLayer(anchors)
+            module.add_module("Detection_" + str(index), detection)
+
+        module_list.append(module)
+        prev_filters = filters
+        output_filters.append(filters)
+
+    return net_info, module_list
+
+
+class Network(nn.Module):
+    def __init__(self, cfgfile):
+        super(Network, self).__init__()
+        self.blocks = parse_cfg(cfgfile)
+        self.net_info, self.module_list = create_modules(self.blocks)
+
+    def forward(self, x, device):
+        modules = self.blocks[1:]
+        outputs = dict()
+
+        write = 0
+        for i, module in enumerate(modules):
+            module_type = (module["type"])
+
+            if module_type == "convolutional" or module_type == "upsample":
+                x = self.module_list[i](x)
+
+            elif module_type == "route":
+                layers = [int(a) for a in module["layers"]]
+
+                if layers[0] > 0:
+                    layers[0] = layers[0] - i
+
+                if len(layers) == 1:
+                    x = outputs[i + (layers[0])]
+                else:
+                    if layers[1] > 0:
+                        layers[1] = layers[1] - i
+
+                    map1 = outputs[i + layers[0]]
+                    map2 = outputs[i + layers[1]]
+
+                    x = torch.cat((map1, map2), 1)
+
+            elif module_type == "shortcut":
+                from_ = int(module["from"])
+                x = outputs[i - 1] + outputs[i + from_]
+
+            elif module_type == "yolo":
+                anchors = self.module_list[i][0].anchors
+
+                # Get the input dimensions
+                inp_dim = int(self.net_info["height"])
+
+                # Get the number of classes
+                num_classes = int(module["classes"])
+
+                # Transform
+                x = x.data
+                x = predict_transform(x, inp_dim, anchors, num_classes)
+
+                # If no collector has been initialized
+                if not write:
+                    detections = x
+                    write = 1
+                else:
+                    detections = torch.cat((detections, x), 1)
+
+            outputs[i] = x
+
+        return detections
+
 
 # Verify GPU connectivity
 if not torch.cuda.is_available():
@@ -155,9 +265,13 @@ print("CUDA availability verified")
 # Get gpu device
 gpu = torch.device("cuda")
 
-blocks = parse_cfg("yolo.cfg")
+yolo_blocks = parse_cfg("yolo.cfg")
+yolo_modules = create_modules(yolo_blocks)
 
-
+model = Network("yolo.cfg")
+inp = get_test_input()
+pred = model(inp, gpu)
+print(pred)
 
 #
 # # Create dataset transforms and loaders
