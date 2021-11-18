@@ -265,7 +265,7 @@ class Network(nn.Module):
             # 2. Minor version number
             # 3. Subversion number
             # 4 and 5: Images seen by the network in training
-            header = np.fromfile(wfile, detype=np.int32, count=5)
+            header = np.fromfile(wfile, dtype=np.int32, count=5)
             self.header = torch.from_numpy(header)
             self.seen = self.header[3]
 
