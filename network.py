@@ -21,7 +21,7 @@ def parse_cfg(cfg_file):
     with open(cfg_file, "r") as config_file:
         lines = config_file.read().split("\n")
         # Filter out empty lines, comments, and fringe whitespaces
-        filtered_lines = [x.rstrip().lstrip() for x in lines if (len(x) > 0 and x[0] != "#")]
+        filtered_lines = [x.rstrip().lstrip() for x in lines if (len(x) > 0 and x[0] != "#" and x[0] != ";")]
 
         # Now get blocks from filtered lines
         blocks = []
@@ -139,19 +139,19 @@ def create_modules(blocks):
             stride = int(x["stride"])
 
             # Use Bilinear2dUpsampling
-            upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+            upsample = nn.Upsample(scale_factor=2, mode="nearest")
             module.add_module("upsample_" + str(index), upsample)
 
         # Otherwise if it is a route layer
         elif x["type"] == "route":
-            split_layers = x["layers"].split(",")
+            x["layers"] = x["layers"].split(",")
 
             # Start of a route
-            start = int(split_layers[0])
+            start = int(x["layers"][0])
 
             # End of a route, if it exists
             try:
-                end = int(split_layers[1])
+                end = int(x["layers"][1])
             except:
                 end = 0
 
@@ -200,7 +200,7 @@ class Network(nn.Module):
         self.blocks = parse_cfg(cfgfile)
         self.net_info, self.module_list = create_modules(self.blocks)
 
-    def forward(self, x, device):
+    def forward(self, x, CUDA):
         modules = self.blocks[1:]
         outputs = dict()
 
@@ -212,8 +212,7 @@ class Network(nn.Module):
                 x = self.module_list[i](x)
 
             elif module_type == "route":
-                layers = module["layers"].split(",")
-                layers = [int(a.strip()) for a in layers]
+                layers = [int(a) for a in module["layers"]]
 
                 if layers[0] > 0:
                     layers[0] = layers[0] - i
@@ -243,8 +242,8 @@ class Network(nn.Module):
                 num_classes = int(module["classes"])
 
                 # Transform
-                x = x.data.cuda()
-                x = predict_transform(x, inp_dim, anchors, num_classes)
+                x = x.data
+                x = predict_transform(x, inp_dim, anchors, num_classes, CUDA)
 
                 # If no collector has been initialized
                 if not write:
@@ -342,24 +341,22 @@ class Network(nn.Module):
 
 
 
-# Verify GPU connectivity
-if not torch.cuda.is_available():
-    raise Exception("CUDA not available!!")
-print("CUDA availability verified")
-
-# Get gpu device
-gpu = torch.device("cuda")
-
-yolo_blocks = parse_cfg("yolo.cfg")
-yolo_modules = create_modules(yolo_blocks)
-
-model = Network("yolo.cfg")
-model.load_weights("yolo.weights")
-inp = get_test_input()
-pred = model(inp, gpu)
-print(pred)
-print(pred.size())
-
+# # Verify GPU connectivity
+# if not torch.cuda.is_available():
+#     raise Exception("CUDA not available!!")
+# print("CUDA availability verified")
+#
+# # Get gpu device
+# gpu = torch.device("cuda")
+#
+# yolo_blocks = parse_cfg("yolo.cfg")
+# yolo_modules = create_modules(yolo_blocks)
+#
+# model = Network("yolo.cfg")
+# model.load_weights("yolo.weights")
+# inp = get_test_input()
+# pred = model(inp, gpu)
+#
 #
 # # Create dataset transforms and loaders
 # # TODO normalize input data based on mean and standard deviation of dataset?
