@@ -212,7 +212,8 @@ class Network(nn.Module):
                 x = self.module_list[i](x)
 
             elif module_type == "route":
-                layers = [int(a) for a in module["layers"]]
+                layers = module["layers"].split(",")
+                layers = [int(a.strip()) for a in layers]
 
                 if layers[0] > 0:
                     layers[0] = layers[0] - i
@@ -257,6 +258,90 @@ class Network(nn.Module):
         return detections
 
 
+    def load_weights(self, weightfile):
+        with open(weightfile, "rb") as wfile:
+            # First 5 values are the header information
+            # 1. Major version number
+            # 2. Minor version number
+            # 3. Subversion number
+            # 4 and 5: Images seen by the network in training
+            header = np.fromfile(wfile, detype=np.int32, count=5)
+            self.header = torch.from_numpy(header)
+            self.seen = self.header[3]
+
+            # Rest of the bits represent the weights
+            weights = np.fromfile(wfile, dtype=np.float32)
+
+            # Iterate through the weights and load into the modules
+            weights_ind = 0
+            for i in range(len(self.module_list)):
+                module_type = self.blocks[i + 1]["type"]
+
+                # If module type is convolutional, load weights (otherwise ignore)
+                if module_type == "convolutional":
+                    model = self.module_list[i]
+                    try:
+                        batch_normalize = int(self.blocks[i + 1]["batch_normalize"])
+                    except:
+                        batch_normalize = 0
+                    conv = model[0]
+
+                    if (batch_normalize):
+                        bn = model[1]
+
+                        # Get the number of weights of the batchnorm layer
+                        num_bn_biases = bn.bias.numel()
+
+                        # Load the weights
+                        bn_biases = torch.from_numpy(weights[weights_ind:weights_ind + num_bn_biases])
+                        weights_ind += num_bn_biases
+
+                        bn_weights = torch.from_numpy(weights[weights_ind:weights_ind + num_bn_biases])
+                        weights_ind += num_bn_biases
+
+                        bn_running_mean = torch.from_numpy(weights[weights_ind:weights_ind + num_bn_biases])
+                        weights_ind += num_bn_biases
+
+                        bn_running_var = torch.from_numpy(weights[weights_ind:weights_ind + num_bn_biases])
+                        weights_ind += num_bn_biases
+
+                        # Cast loaded weights into dims of model weights
+                        bn_biases = bn_biases.view_as(bn.bias.data)
+                        bn_weights = bn_weights.view_as(bn.weight.data)
+                        bn_running_mean = bn_running_mean.view_as(bn.running_mean)
+                        bn_running_var = bn_running_var.view_as(bn.running_var)
+
+                        # Copy data to the model
+                        bn.bias.data.copy_(bn_biases)
+                        bn.weight.data.copy_(bn_weights)
+                        bn.running_mean.copy_(bn_running_mean)
+                        bn.running_var.copy_(bn_running_var)
+
+                    else:
+                        # Number of biases
+                        num_biases = conv.bias.numel()
+
+                        # Load the weights
+                        conv_biases = torch.from_numpy(weights[weights_ind:weights_ind + num_biases])
+                        weights_ind += num_biases
+
+                        # Reshape loaded weights according to dims of models weights
+                        conv_biases = conv_biases.view_as(conv.bias.data)
+
+                        # Copy the data
+                        conv.bias.data.copy_(conv_biases)
+
+                    # Finally, load the weights for the convolutional layers
+                    num_weights = conv.weight.numel()
+
+                    conv_weights = torch.from_numpy(weights[weights_ind:weights_ind + num_weights])
+                    weights_ind += num_weights
+
+                    conv_weights = conv_weights.view_as(conv.weight.data)
+                    conv.weight.data.copy_(conv_weights)
+
+
+
 # Verify GPU connectivity
 if not torch.cuda.is_available():
     raise Exception("CUDA not available!!")
@@ -269,9 +354,11 @@ yolo_blocks = parse_cfg("yolo.cfg")
 yolo_modules = create_modules(yolo_blocks)
 
 model = Network("yolo.cfg")
+model.load_weights("yolo.weights")
 inp = get_test_input()
 pred = model(inp, gpu)
 print(pred)
+print(pred.size())
 
 #
 # # Create dataset transforms and loaders
