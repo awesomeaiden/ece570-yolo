@@ -83,8 +83,8 @@ def bbox_iou(box1, box2):
     # Get the coordinates of the intersection rectangle
     int_rect_x1 = torch.max(b1_x1, b2_x1)
     int_rect_y1 = torch.max(b1_y1, b2_y1)
-    int_rect_x2 = torch.max(b1_x2, b2_x2)
-    int_rect_y2 = torch.max(b1_y2, b2_y2)
+    int_rect_x2 = torch.min(b1_x2, b2_x2)
+    int_rect_y2 = torch.min(b1_y2, b2_y2)
 
     # Intersection area
     int_area = torch.clamp(int_rect_x2 - int_rect_x1 + 1, min=0) * torch.clamp(int_rect_y2 - int_rect_y1 + 1, min=0)
@@ -134,6 +134,9 @@ def write_results(prediction, confidence, num_classes, nms_conf=0.4):
         try:
             image_pred_ = image_pred[non_zero_ind.squeeze(), :].view(-1, 7)
         except:
+            continue
+
+        if image_pred_.shape[0] == 0:
             continue
 
         # Get the various classes detected in the image
@@ -211,8 +214,7 @@ def letterbox_images(img, inp_dim):
 
 def prep_image(img, inp_dim):
     # Prepare image for inputting to the neural network
-
-    img = cv2.resize(img, (inp_dim, inp_dim))
+    img = (letterbox_images(img, (inp_dim, inp_dim)))
     img = img[:, :, ::-1].transpose((2, 0, 1)).copy()
     img = torch.from_numpy(img).float().div(255.0).unsqueeze(0)
 
