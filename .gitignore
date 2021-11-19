@@ -58,3 +58,6 @@ venv.bak/
 
 # Weights files
 *.weights
+
+# Videos
+*.mp4
