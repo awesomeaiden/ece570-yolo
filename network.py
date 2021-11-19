@@ -46,7 +46,7 @@ def parse_cfg(cfg_file):
 
 
 def get_test_input():
-    img = cv2.imread("dog-cycle-car.png")
+    img = cv2.imread("images/dog-cycle-car.png")
 
     # Resize to input dimension
     img = cv2.resize(img, (416, 416))
