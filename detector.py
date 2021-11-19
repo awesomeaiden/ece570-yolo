@@ -45,7 +45,7 @@ start = 0
 CUDA = torch.cuda.is_available()
 
 num_classes = 80
-classes = load_classes("data/coco.names")
+classes = load_classes("coco.names")
 
 # Set up the neural network
 print("Loading network....")
@@ -147,6 +147,7 @@ for i, batch in enumerate(im_batches):
 
     if CUDA:
         torch.cuda.synchronize()
+
 
 # Now we have detections on all images.  Let's now draw bounding boxes on our images.
 try:
