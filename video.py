@@ -46,7 +46,7 @@ start = 0
 CUDA = torch.cuda.is_available()
 
 num_classes = 80
-classes = load_classes("data/coco.names")
+classes = load_classes("coco.names")
 
 # Set up the neural network
 print("Loading network.....")
@@ -134,7 +134,7 @@ while cap.isOpened():
             output[i, [1, 3]] = torch.clamp(output[i, [1, 3]], 0.0, im_dim[i, 0])
             output[i, [2, 4]] = torch.clamp(output[i, [2, 4]], 0.0, im_dim[i, 1])
 
-        classes = load_classes('data/coco.names')
+        classes = load_classes('coco.names')
         colors = pkl.load(open("pallete", "rb"))
 
         list(map(lambda x: write(x, frame), output))

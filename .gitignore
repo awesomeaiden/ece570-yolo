@@ -61,3 +61,9 @@ venv.bak/
 
 # Videos
 *.mp4
+
+# VOC Images
+images/VOC/
+
+# Detections
+det/
